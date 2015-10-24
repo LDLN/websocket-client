@@ -1,0 +1,4 @@
+websocketHost="54.174.9.195"
+websocketPort=8080
+mDNSEnabled=true
+mDNSServiceName="LDLN\\ Basestation"

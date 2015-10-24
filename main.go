@@ -27,22 +27,51 @@ import (
 	"net"
 	"github.com/gorilla/websocket"
 	"time"
-	"encoding/json"
+	//"encoding/json"
 	"github.com/hashicorp/mdns"
 	"fmt"
 	"strings"
 	"strconv"
 	"github.com/BurntSushi/toml"
+	"os"
 )
+
+// Info from config file
+type Config struct {
+	WebsocketHost		string
+	WebsocketPort		int
+	MDNSEnabled			bool
+	MDNSServiceName		string
+}
 
 func main() {
 	
 	// get conf file
+	var config = ReadConfig("config.toml")
 	
 	// check cloud server
+	go clientConnect(config.WebsocketHost, config.WebsocketPort)
 	
 	// check local network
-	mdnsServicePoll("LDLN\\ Basestation")
+	if config.MDNSEnabled {
+		mdnsServicePoll(config.MDNSServiceName)
+	}
+}
+
+// Reads info from config file
+func ReadConfig(configfile string) Config {
+
+	_, err := os.Stat(configfile)
+	if err != nil {
+		log.Fatal("Config file is missing: ", configfile)
+	}
+
+	var config Config
+	if _, err := toml.DecodeFile(configfile, &config); err != nil {
+		log.Fatal(err)
+	}
+
+	return config
 }
 
 func mdnsServicePoll(searchName string) {
@@ -55,13 +84,14 @@ func mdnsServicePoll(searchName string) {
 			
 			if strings.Contains(entry.Name, searchName) {
 				
-				clientConnect(entry.Host, entry.Port)
+				go clientConnect(entry.Host, entry.Port)
 			}
 	    }
 	}()
 	
 	// Start the lookup
 	for {
+		log.Printf("Searching for '%s' on multicast DNS", searchName)
 		mdns.Lookup("_http._tcp", entriesCh)
 		time.Sleep(60000 * time.Millisecond)
 	}
@@ -70,7 +100,7 @@ func mdnsServicePoll(searchName string) {
 
 func clientConnect(host string, port int) {
 	
-	log.Printf("LDLN phone home...")
+	log.Printf("Connecting to server at %s on port %s", host, strconv.Itoa(port))
 
 	// connect to mongodb
 	session, err := mgo.Dial("localhost")
@@ -80,7 +110,7 @@ func clientConnect(host string, port int) {
 	defer session.Close()
 	
 	// connect to socket
-	s := []string{"http://", host, ":", strconv.Itoa(port), "/ws"};
+	s := []string{"ws://", host, ":", strconv.Itoa(port), "/ws"};
     wsurl := strings.Join(s, "")
 	
 	u, err := url.Parse(wsurl)
@@ -105,6 +135,7 @@ func clientConnect(host string, port int) {
 	
 	defer func() {
         wsConn.Close()
+		log.Printf("Closing connection to %s on port %s", host, strconv.Itoa(port))
     }()
 	
 	// start the upstream reader
@@ -146,7 +177,7 @@ func reader(wsConn *websocket.Conn) {
 	defer session.Close()
 	
 	connectOk := true
-	while connectOk {
+	for connectOk {
 		m := make(map[string]interface{})
  
 		err := wsConn.ReadJSON(&m)
@@ -154,8 +185,8 @@ func reader(wsConn *websocket.Conn) {
 			connectOk = false
 		}
  
-		log.Println("Got message:")
-		log.Println(m)
+		//log.Println("Got message:")
+		//log.Println(m)
 		
 		// if its server_diff_response
 		if m["action"] != nil {
@@ -175,7 +206,7 @@ func reader(wsConn *websocket.Conn) {
 			}
 		}
 	}
-	
+	log.Printf("Lost connection")
 }
 
 func clientGetRequest(wsConn *websocket.Conn, action string) {
@@ -213,9 +244,9 @@ func clientDiffRequest(wsConn *websocket.Conn, session *mgo.Session) {
 		// send it over websocket
 		wsConn.WriteJSON(response_map)
 		
-		log.Println("Wrote message:")
-		jsonString, _ := json.Marshal(response_map)
-		log.Println(string(jsonString))
+		//log.Println("Wrote message:")
+		//jsonString, _ := json.Marshal(response_map)
+		//log.Println(string(jsonString))
 	}
 }
 
@@ -314,8 +345,8 @@ func processServerDiffResponse(wsConn *websocket.Conn, m map[string]interface{},
 		// write back
 		wsConn.WriteJSON(messageMap)
 		
-		log.Println("Wrote message:")
-		jsonString, _ := json.Marshal(messageMap)
-		log.Println(string(jsonString))
+		//log.Println("Wrote message:")
+		//jsonString, _ := json.Marshal(messageMap)
+		//log.Println(string(jsonString))
 	}
 }
