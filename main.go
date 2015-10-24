@@ -32,17 +32,28 @@ import (
 	"fmt"
 	"strings"
 	"strconv"
+	"github.com/BurntSushi/toml"
 )
 
 func main() {
-    
+	
+	// get conf file
+	
+	// check cloud server
+	
+	// check local network
+	mdnsServicePoll("LDLN\\ Basestation")
+}
+
+func mdnsServicePoll(searchName string) {
+	
 	// Make a channel for results and start listening
 	entriesCh := make(chan *mdns.ServiceEntry, 4)
 	go func() {
 	    for entry := range entriesCh {
 	        fmt.Printf("Gots new entry: %v\n", entry.Name)
 			
-			if strings.Contains(entry.Name, "LDLN\\ Basestation") {
+			if strings.Contains(entry.Name, searchName) {
 				
 				clientConnect(entry.Host, entry.Port)
 			}
@@ -92,6 +103,10 @@ func clientConnect(host string, port int) {
 	    log.Fatal("websocket.NewClient Error: %s\nResp:%+v", err, resp)
 	}
 	
+	defer func() {
+        wsConn.Close()
+    }()
+	
 	// start the upstream reader
 	go reader(wsConn)
 	
@@ -130,12 +145,13 @@ func reader(wsConn *websocket.Conn) {
 	}
 	defer session.Close()
 	
-	for {
+	connectOk := true
+	while connectOk {
 		m := make(map[string]interface{})
  
 		err := wsConn.ReadJSON(&m)
 		if err != nil {
-			log.Println("Error reading json.", err)
+			connectOk = false
 		}
  
 		log.Println("Got message:")
